@@ -12,31 +12,142 @@ public class MultiThreadConcurrentObjectPoolTest {
     public void testClose() throws Exception {
         ConcurrentObjectPool<String> pool = new ConcurrentObjectPool<>();
         pool.open();
-        String resource = "A";
-        pool.add(resource);
+        String resource1 = "A";
+        String resource2 = "B";
+        pool.add(resource1);
+        pool.add(resource2);
         List<String> log = new ArrayList<>();
-        Step step1 = new Step(50, () -> {
+        List<Step> steps = new ArrayList<>();
+        steps.add(new Step(100, () -> {
             pool.acquire();
-            log.add("acquired");
-        });
-        Step step2 = new Step(100, () -> {
+            log.add("acquired1");
+        }));
+        steps.add(new Step(150, () -> {
+            pool.acquire();
+            log.add("acquired2");
+        }));
+        steps.add(new Step(200, () -> {
             log.add("try close");
             pool.close();
             log.add("closed");
-        });
-        Step step3 = new Step(150, () -> {
-            pool.release(resource);
-            log.add("released");
-        });
-        step1.start();
-        step2.start();
-        step3.start();
+        }));
+        steps.add(new Step(300, () -> {
+            pool.release(resource1);
+            log.add("released1");
+        }));
+        steps.add(new Step(350, () -> {
+            pool.release(resource2);
+            log.add("released2");
+        }));
 
-        step1.join();
-        step2.join();
-        step3.join();
+        steps.forEach(Step::start);
 
-        Assert.assertEquals(log.toArray(new String[log.size()]), new String[]{"acquired", "try close", "released", "closed"});
+        for (Step step : steps) {
+            step.join();
+        }
+
+        Assert.assertEquals(log.toArray(new String[log.size()]),
+                new String[]{"acquired1", "acquired2", "try close", "released1", "released2", "closed"});
+    }
+
+    @Test
+    public void testRemove() throws Exception {
+        ConcurrentObjectPool<String> pool = new ConcurrentObjectPool<>();
+        pool.open();
+        String resource1 = "A";
+        String resource2 = "B";
+        pool.add(resource1);
+        pool.add(resource2);
+        List<String> log = new ArrayList<>();
+        List<Step> steps = new ArrayList<>();
+        steps.add(new Step(100, () -> {
+            pool.acquire();
+            log.add("acquired1");
+        }));
+        steps.add(new Step(150, () -> {
+            pool.acquire();
+            log.add("acquired2");
+        }));
+        steps.add(new Step(200, () -> {
+            log.add("try remove " + resource1);
+            pool.remove(resource1);
+            log.add("removed " + resource1);
+        }));
+        steps.add(new Step(250, () -> {
+            log.add("try remove " + resource2);
+            pool.remove(resource2);
+            log.add("removed " + resource2);
+        }));
+        steps.add(new Step(300, () -> {
+            log.add("release1");
+            pool.release(resource1);
+        }));
+        steps.add(new Step(350, () -> {
+            log.add("release2");
+            pool.release(resource2);
+        }));
+
+        steps.forEach(Step::start);
+
+        for (Step step : steps) {
+            step.join();
+        }
+
+        Assert.assertEquals(log.toArray(new String[log.size()]),
+                new String[]{"acquired1",
+                        "acquired2",
+                        "try remove " + resource1,
+                        "try remove " + resource2,
+                        "release1",
+                        "removed " + resource1,
+                        "release2",
+                        "removed " + resource2});
+    }
+
+    @Test
+    public void testAcquireAndClose() throws Exception {
+        ConcurrentObjectPool<String> pool = new ConcurrentObjectPool<>();
+        pool.open();
+        String resource1 = "A";
+        pool.add(resource1);
+        List<String> log = new ArrayList<>();
+        List<Step> steps = new ArrayList<>();
+        steps.add(new Step(100, () -> {
+            pool.acquire();
+            log.add("acquired1");
+        }));
+        steps.add(new Step(150, () -> {
+            log.add("try to acquire2");
+            pool.acquire();
+        }));
+        steps.add(new Step(200, () -> {
+            log.add("try to close");
+            pool.close();
+            log.add("closed");
+        }));
+        steps.add(new Step(250, () -> {
+            log.add("release1");
+            pool.release(resource1);
+        }));
+        steps.add(new Step(300, () -> {
+            log.add("release1");
+            pool.release(resource1);
+        }));
+
+        steps.forEach(Step::start);
+
+        for (Step step : steps) {
+            step.join();
+        }
+
+        Assert.assertEquals(log.toArray(new String[log.size()]),
+                new String[]{"acquired1",
+                        "try to acquire2",
+                        "try to close",
+                        "release1",
+                        "release1",
+                        "closed",
+                        });
     }
 
     private class Step extends Thread {

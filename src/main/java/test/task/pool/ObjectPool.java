@@ -16,7 +16,7 @@ public interface ObjectPool<R> {
 
     R acquire(long timeout, TimeUnit timeUnit) throws NotOpenedException, InterruptedException;
 
-    void release(R resource) throws NotOpenedException;
+    void release(R resource);
 
     boolean add(R resource);
 

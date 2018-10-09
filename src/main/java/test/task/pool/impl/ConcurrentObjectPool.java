@@ -3,10 +3,7 @@ package test.task.pool.impl;
 import test.task.pool.NotOpenedException;
 import test.task.pool.ObjectPool;
 
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Iterator;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -43,39 +40,48 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
 
     // @TODO: InterruptedException ?
     public void close() throws InterruptedException {
+        log(" close");
         try {
             isOpenedLock.lock();
-            // @TODO: separate lock?
-            try {
-                acquireLock.lock();
-                while (!busy.isEmpty()) {
-                    releaseCondition.await();
-                }
-                cleanUp();
-            } finally {
-                acquireLock.unlock();
-            }
+            isOpened = false;
+            log(" close: isOpened = false");
         } finally {
             isOpenedLock.unlock();
+        }
+
+        // @TODO: separate lock?
+        try {
+            acquireLock.lock();
+            while (!busy.isEmpty()) {
+                log(" close: await for release");
+                releaseCondition.await();
+            }
+            cleanUp();
+        } finally {
+            acquireLock.unlock();
         }
     }
 
     public void closeNow() {
         try {
             isOpenedLock.lock();
-            try {
-                acquireLock.lock();
-                cleanUp();
-            } finally {
-                acquireLock.unlock();
-            }
+            isOpened = false;
         } finally {
             isOpenedLock.unlock();
+        }
+
+        try {
+            acquireLock.lock();
+            cleanUp();
+        } finally {
+            acquireLock.unlock();
         }
     }
 
     // @TODO: InterruptedException ?
+    // @TODO: opened lock ?
     public R acquire() throws NotOpenedException, InterruptedException {
+        log(" acquire");
         try {
             isOpenedLock.lock();
             checkIsOpened();
@@ -83,6 +89,7 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
             try {
                 acquireLock.lock();
                 if (available.isEmpty()) {
+                    log(" acquire: - no available, await");
                     acquireCondition.await();
                 }
                 return get(false);
@@ -115,21 +122,17 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         }
     }
 
-    public void release(R resource) throws NotOpenedException {
+    public void release(R resource) {
         try {
-            isOpenedLock.lock();
-            checkIsOpened();
-            try {
-                acquireLock.lock();
-                put(resource);
-                releaseCondition.signal();
-                acquireCondition.signal();
-            } finally {
-                acquireLock.unlock();
-            }
+            log(" release");
+            acquireLock.lock();
+            put(resource);
+            releaseCondition.signal();
+            acquireCondition.signal();
         } finally {
-            isOpenedLock.unlock();
+            acquireLock.unlock();
         }
+        log(" release finished");
     }
 
     public boolean add(R resource) {
@@ -146,25 +149,30 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
     // @TODO: InterruptedException ?
     // @TODO: check removeQueue section
     public boolean remove(R resource) throws InterruptedException {
+        log(" remove " + resource);
         try {
             acquireLock.lock();
             if (available.remove(resource)) {
+                log(" remove: is available");
                 return true;
             }
             if (busy.contains(resource)) {
+                log(" remove: is busy");
                 removeQueue.add(resource);
 
                 while (removeQueue.contains(resource)) {
+                    log(" remove: await for release");
                     removeCondition.await();
                 }
+                log(" remove: removed");
                 return true;
             }
         } finally {
             acquireLock.unlock();
         }
+        log(" remove: not found");
         return false;
     }
-
     public boolean removeNow(R resource) {
         try {
             acquireLock.lock();
@@ -201,15 +209,19 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         if (element == null && !nullable) {
             throw new IllegalArgumentException();
         }
+        log(" get " + element);
         return element;
     }
 
     private void put(R item) {
+        log(" put " + item);
         boolean removed = busy.remove(item);
         // @TODO: unknown element?
         if (removed) {
-            if (removeQueue.remove(item)) {
-                removeCondition.signal();
+            boolean shouldBeRemoved = removeQueue.remove(item);
+            log(" put, shouldBeRemoved = " + shouldBeRemoved);
+            if (shouldBeRemoved) {
+                removeCondition.signalAll();
             } else {
                 available.add(item);
             }
@@ -222,9 +234,8 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         }
     }
 
-
     private void cleanUp() {
-        isOpened = false;
+        log(" cleanUp");
 
         busy.clear();
         available.clear();
@@ -233,6 +244,10 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         releaseCondition.signalAll();
         acquireCondition.signalAll();
         removeCondition.signalAll();
+    }
+
+    private void log(String s) {
+        System.err.println(new Date() + " " + Thread.currentThread().getName() + s);
     }
 
 }
