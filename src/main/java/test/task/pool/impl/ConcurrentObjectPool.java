@@ -15,14 +15,14 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class ConcurrentObjectPool<R> implements ObjectPool<R> {
     private volatile boolean isOpened = false;
-    private Lock isOpenedLock = new ReentrantLock();
-    private Lock acquireLock = new ReentrantLock();
-    private Condition acquireCondition = acquireLock.newCondition();
-    private Condition releaseCondition = acquireLock.newCondition();
-    private Condition removeCondition = acquireLock.newCondition();
-    private Set<R> available = Collections.newSetFromMap(new IdentityHashMap<>());
-    private Set<R> busy = Collections.newSetFromMap(new IdentityHashMap<>());
-    private Set<R> removeQueue = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Lock isOpenedLock = new ReentrantLock();
+    private final Lock acquireLock = new ReentrantLock();
+    private final Condition acquireCondition = acquireLock.newCondition();
+    private final Condition releaseCondition = acquireLock.newCondition();
+    private final Condition removeCondition = acquireLock.newCondition();
+    private final Set<R> available = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<R> busy = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<R> removeQueue = Collections.newSetFromMap(new IdentityHashMap<>());
 
     public void open() {
         try {
@@ -90,7 +90,7 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
 
         try {
             acquireLock.lock();
-            if (available.isEmpty()) {
+            while (available.isEmpty() && isOpened) {
                 log(" acquire: - no available, await");
                 acquireCondition.await();
             }
@@ -133,6 +133,7 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
 
     public boolean add(R resource) throws IllegalObjectException {
         validateResource(resource);
+        log("add");
 
         try {
             acquireLock.lock();
@@ -141,12 +142,13 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
             return modified;
         } finally {
             acquireLock.unlock();
+            log("add finished");
         }
     }
 
     public boolean remove(R resource) throws InterruptedException, IllegalObjectException {
         validateResource(resource);
-        log(" remove " + resource);
+        log("remove " + resource);
         try {
             acquireLock.lock();
             if (available.remove(resource)) {
@@ -226,7 +228,6 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
     }
 
     private void put(R item) {
-        log(" put " + item);
         boolean removed = busy.remove(item);
         // @TODO: unknown element?
         if (removed) {
