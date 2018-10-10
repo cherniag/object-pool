@@ -1,5 +1,6 @@
 package test.task.pool.impl;
 
+import test.task.pool.IllegalObjectException;
 import test.task.pool.NotOpenedException;
 import test.task.pool.ObjectPool;
 
@@ -41,7 +42,6 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         }
     }
 
-    // @TODO: InterruptedException ?
     public void close() throws InterruptedException {
         log(" close");
         try {
@@ -100,8 +100,8 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         }
     }
 
-    // @TODO: InterruptedException ?
     public R acquire(long timeout, TimeUnit timeUnit) throws NotOpenedException, InterruptedException {
+        validateTimeout(timeout, timeUnit);
         checkIsOpened();
 
         try {
@@ -116,13 +116,14 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         }
     }
 
-    public void release(R resource) {
+    public void release(R resource) throws IllegalObjectException {
+        validateResource(resource);
+
         try {
             log(" release");
             acquireLock.lock();
             put(resource);
             releaseCondition.signal();
-            // may impact performance (use signal?)
             acquireCondition.signal();
         } finally {
             acquireLock.unlock();
@@ -130,7 +131,9 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         log(" release finished");
     }
 
-    public boolean add(R resource) {
+    public boolean add(R resource) throws IllegalObjectException {
+        validateResource(resource);
+
         try {
             acquireLock.lock();
             boolean modified = available.add(resource);
@@ -141,9 +144,8 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         }
     }
 
-    // @TODO: InterruptedException ?
-    // @TODO: check removeQueue section
-    public boolean remove(R resource) throws InterruptedException {
+    public boolean remove(R resource) throws InterruptedException, IllegalObjectException {
+        validateResource(resource);
         log(" remove " + resource);
         try {
             acquireLock.lock();
@@ -169,7 +171,9 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         return false;
     }
 
-    public boolean removeNow(R resource) {
+    public boolean removeNow(R resource) throws IllegalObjectException {
+        validateResource(resource);
+
         try {
             acquireLock.lock();
             if (available.remove(resource)) {
@@ -257,6 +261,21 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         releaseCondition.signalAll();
         acquireCondition.signalAll();
         removeCondition.signalAll();
+    }
+
+    private void validateResource(R resource) throws IllegalObjectException {
+        if (resource == null) {
+            throw new IllegalObjectException("Object can not be null");
+        }
+    }
+
+    private void validateTimeout(long timeout, TimeUnit timeUnit) {
+        if (timeout < 0) {
+            throw new IllegalArgumentException("Timeout should not be negative");
+        }
+        if (timeUnit == null) {
+            throw new IllegalArgumentException("Time unit should not be null");
+        }
     }
 
     private void log(String s) {

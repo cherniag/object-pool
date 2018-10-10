@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-public class MultiThreadConcurrentObjectPoolTest {
+public class ConcurrentObjectPoolMultiThreadTest {
     private ConcurrentObjectPool<String> pool = new ConcurrentObjectPool<>();
 
     @BeforeMethod
@@ -259,7 +259,6 @@ public class MultiThreadConcurrentObjectPoolTest {
                 for (int i = 0; i < times; i++) {
                     Thread.sleep(delay);
                     action.perform(log);
-
                 }
             } catch (Exception e) {
                 throw new RuntimeException(e);
