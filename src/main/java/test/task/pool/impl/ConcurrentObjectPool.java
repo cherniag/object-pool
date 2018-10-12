@@ -43,11 +43,9 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
     }
 
     public void close() throws InterruptedException {
-        log(" close");
         try {
             isOpenedLock.lock();
             isOpened = false;
-            log(" close: isOpened = false");
         } finally {
             isOpenedLock.unlock();
         }
@@ -55,18 +53,15 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         try {
             acquireLock.lock();
             while (!busy.isEmpty()) {
-                log(" close: await for release");
                 releaseCondition.await();
             }
             cleanUp();
         } finally {
             acquireLock.unlock();
         }
-        log(" close finished");
     }
 
     public void closeNow() {
-        log("closeNow");
         try {
             isOpenedLock.lock();
             isOpened = false;
@@ -80,18 +75,15 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         } finally {
             acquireLock.unlock();
         }
-        log("closeNow finished");
     }
 
 
     public R acquire() throws NotOpenedException, InterruptedException {
-        log(" acquire");
         checkIsOpened();
 
         try {
             acquireLock.lock();
             while (available.isEmpty() && isOpened) {
-                log(" acquire: - no available, await");
                 acquireCondition.await();
             }
             return get(false);
@@ -120,7 +112,6 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         validateResource(resource);
 
         try {
-            log(" release");
             acquireLock.lock();
             put(resource);
             releaseCondition.signal();
@@ -128,12 +119,10 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         } finally {
             acquireLock.unlock();
         }
-        log(" release finished");
     }
 
     public boolean add(R resource) throws IllegalObjectException {
         validateResource(resource);
-        log("add");
 
         try {
             acquireLock.lock();
@@ -142,34 +131,27 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
             return modified;
         } finally {
             acquireLock.unlock();
-            log("add finished");
         }
     }
 
     public boolean remove(R resource) throws InterruptedException, IllegalObjectException {
         validateResource(resource);
-        log("remove " + resource);
         try {
             acquireLock.lock();
             if (available.remove(resource)) {
-                log(" remove: is available");
                 return true;
             }
             if (busy.contains(resource)) {
-                log(" remove: is busy");
                 removeQueue.add(resource);
 
                 while (removeQueue.contains(resource)) {
-                    log(" remove: await for release");
                     removeCondition.await();
                 }
-                log(" remove: removed");
                 return true;
             }
         } finally {
             acquireLock.unlock();
         }
-        log(" remove: not found");
         return false;
     }
 
@@ -220,7 +202,6 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
             if (element == null && !nullable) {
                 throw new IllegalArgumentException();
             }
-            log(" get " + element);
             return element;
         } finally {
             isOpenedLock.unlock();
@@ -232,7 +213,6 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
         // @TODO: unknown element?
         if (removed) {
             boolean shouldBeRemoved = removeQueue.remove(item);
-            log(" put, shouldBeRemoved = " + shouldBeRemoved);
             if (shouldBeRemoved) {
                 removeCondition.signalAll();
             } else {
@@ -253,8 +233,6 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
     }
 
     private void cleanUp() {
-        log(" cleanUp");
-
         busy.clear();
         available.clear();
         removeQueue.clear();
@@ -278,9 +256,4 @@ public class ConcurrentObjectPool<R> implements ObjectPool<R> {
             throw new IllegalArgumentException("Time unit should not be null");
         }
     }
-
-    private void log(String s) {
-        System.err.println(System.currentTimeMillis() + " " + Thread.currentThread().getName() + " " + s);
-    }
-
 }
